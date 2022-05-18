@@ -26,11 +26,14 @@ LinkConnection conn;
     .baud_rate = BAUD_RATE_1,
     .timeout = 3,
     .remote_timeout = 5,
-    .buffer_size = 30,
+    .buffer_len = 30,
     .interval = 50,
     .send_timer_id = 3,
   };
   conn = lc_init(settings);
+  
+  // Alternatively you can pass in memory for 5 buffers manually:
+  // conn = lc_init_manual(settings, malloc(LINK_TOTAL_BUFFERS * 30 * sizeof(u16)))
 ```
 
 2\) Add the required interrupt service routines:
@@ -58,22 +61,22 @@ void onTimer() {
 3\) Start the library with:
 
 ```c
-  lc_activate(&conn);
+lc_activate(&conn);
 ```
 
 4\) Send/read messages by using:
 
 ```c
-  lc_send(&conn, data)
-  lc_is_connected(&conn)
-  lc_has_message(&conn, player_id)
-  lc_read_message(&conn, player_id)
+lc_send(&conn, data)
+lc_is_connected(&conn)
+lc_has_message(&conn, player_id)
+lc_read_message(&conn, player_id)
 ```
 
 Restrictions on sent data: `0xFFFF` and `0x0000` are reserved values, so don't use them (they mean 'disconnected' and 'no data' respectively).
 
-5\) Destroy the connection to free the internal buffers:
+5\) If you used `lc_init`, be sure to free the internal buffers:
 
 ```c
-  lc_destroy(&conn);
+lc_destroy(&conn);
 ```

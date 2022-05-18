@@ -14,7 +14,7 @@ Usage:
     .baud_rate = BAUD_RATE_1,
     .timeout = 3,
     .remote_timeout = 5,
-    .buffer_size = 30,
+    .buffer_len = 30,
     .interval = 50,
     .send_timer_id = 3,
   };
@@ -65,6 +65,7 @@ Usage:
 #include <tonc_memmap.h>
 
 #define LINK_MAX_PLAYERS 4
+#define LINK_TOTAL_BUFFERS (LINK_MAX_PLAYERS + 1)
 #define LINK_DISCONNECTED 0xFFFF
 #define LINK_NO_DATA 0x0
 #define LINK_BASE_FREQUENCY TM_FREQ_1024
@@ -120,7 +121,7 @@ typedef struct LinkConnection {
   BaudRate baud_rate;
   u32 timeout;
   u32 remote_timeout;
-  u32 buffer_size;
+  u32 buffer_len;
   u32 interval;
   u8 send_timer_id;
   bool is_enabled;
@@ -133,7 +134,7 @@ typedef struct LinkConnectionSettings {
   BaudRate baud_rate;    // Sets a specific baud rate.
   u32 timeout;           // Number of frames without an II_SERIAL IRQ to reset the connection.
   u32 remote_timeout;    // Number of messages with 0xFFFF to mark a player as disconnected.
-  u32 buffer_size;       // Number of messages that the queues will be able to store.
+  u32 buffer_len;        // Number of messages that the queues will be able to store.
   u32 interval;          // Number of 1024-cycles (61.04μs) ticks between messages (50 = 3,052ms). It's the interval of the timer chosen by `send_timer_id`.
   u8 send_timer_id;      // GBA Timer to use for sending.
 } LinkConnectionSettings;
@@ -142,18 +143,14 @@ typedef struct LinkConnectionSettings {
 // Basic std::queue<u16> replacement
 // ---------------------------------
 
-inline static U16Queue u16q_init(u32 cap) {
+inline static U16Queue u16q_init(u32 cap, u16 *buf) {
   return (U16Queue) {
-    .buf = malloc(cap * sizeof(u16)),
+    .buf = buf,
     .cap = cap,
     .len = 0,
     .i = 0,
     .j = 0,
   };
-}
-
-inline static void u16q_destroy(U16Queue *q) {
-  free(q->buf);
 }
 
 inline static bool u16q_empty(U16Queue *q) {
@@ -195,27 +192,33 @@ static inline void LINK_QUEUE_CLEAR(U16Queue *q) {
   }
 }
 
-// Link State
-// ----------
+// Link State (internal)
+// ---------------------
 
-static inline LinkState linkstate_init(u32 buffer_size) {
+static inline LinkState linkstate_init_manual(int buffer_len, u16 *buffer_mem) {
   LinkState self = {};
   
-  // allocate message buffers:
-  for (int i = 0; i < LINK_MAX_PLAYERS; i++) {
-    self.incoming_messages[i] = u16q_init(buffer_size);
-  }
-  self.outgoing_messages = u16q_init(buffer_size);
+  // Assume large enough for 4 player buffers + 1 outgoing buffer.
+  // Point to the first buffer.
+  u16 *buf = buffer_mem;
   
+  for (int i = 0; i < LINK_MAX_PLAYERS; i++) {
+    self.incoming_messages[i] = u16q_init(buffer_len, buf);
+    buf += buffer_len;
+  }
+  self.outgoing_messages = u16q_init(buffer_len, buf);
   return self;
 }
 
+static inline LinkState linkstate_init(int buffer_len) {
+  u16 *buffer_mem = malloc(LINK_TOTAL_BUFFERS * buffer_len * sizeof(u16));
+  return linkstate_init_manual(buffer_len, buffer_mem);
+}
+
 static inline void linkstate_destroy(LinkState *self) {
-  // free message buffers:
-  for (int i = 0; i < LINK_MAX_PLAYERS; i++) {
-    u16q_destroy(&self->incoming_messages[i]);
-  }
-  u16q_destroy(&self->outgoing_messages);
+  // free message buffers
+  // no need to do this if `linkstate_init_manual` was called.
+  free(&self->incoming_messages[0].buf);   // Buffer 0 has 5 
 }
 
 static inline bool linkstate_is_connected(LinkState *self) {
@@ -317,8 +320,8 @@ static inline bool lc_reset_if_needed(LinkConnection *self) {
 }
 
 static inline void lc_push(LinkConnection *self, U16Queue *q, u16 value) {
-  if (q->len >= self->buffer_size) {
-    LINK_QUEUE_POP(&q);
+  if (q->len >= self->buffer_len) {
+    LINK_QUEUE_POP(q);
   }
   u16q_push(q, value);
 }
@@ -327,13 +330,35 @@ static inline void lc_push(LinkConnection *self, U16Queue *q, u16 value) {
 // Public API
 // ----------
 
-static inline LinkConnection lc_init(LinkConnectionSettings settings) {
+/**
+ * Initialise a link connection, providing existing memory for the message queues.
+ * 
+ * Note: `buffer_mem` should point to a region of size (LINK_TOTAL_BUFFERS * buffer_len * sizeof(u16))
+ */
+static inline LinkConnection lc_init_manual(LinkConnectionSettings settings, u16 *buffer_mem) {
   LinkConnection self = {
-    .state = linkstate_init(settings.buffer_size),
+    .state = linkstate_init_manual(settings.buffer_len, buffer_mem),
     .baud_rate = settings.baud_rate,
     .timeout = settings.timeout,
     .remote_timeout = settings.remote_timeout,
-    .buffer_size = settings.buffer_size,
+    .buffer_len = settings.buffer_len,
+    .interval = settings.interval,
+    .send_timer_id = settings.send_timer_id,
+  };
+  lc_stop(&self);
+  return self;
+}
+
+/**
+ * Initialise a link connection.
+ */
+static inline LinkConnection lc_init(LinkConnectionSettings settings) {
+  LinkConnection self = {
+    .state = linkstate_init(settings.buffer_len),
+    .baud_rate = settings.baud_rate,
+    .timeout = settings.timeout,
+    .remote_timeout = settings.remote_timeout,
+    .buffer_len = settings.buffer_len,
     .interval = settings.interval,
     .send_timer_id = settings.send_timer_id,
   };

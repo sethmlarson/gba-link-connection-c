@@ -24,7 +24,7 @@ int main(void) {
     .baud_rate = BAUD_RATE_1,
     .timeout = 3,
     .remote_timeout = 5,
-    .buffer_size = 30,
+    .buffer_len = 30,
     .interval = 50,
     .send_timer_id = 3,
   };
