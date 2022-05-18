@@ -165,12 +165,11 @@ inline static u16 u16q_front(U16Queue *q) {
 }
 
 inline static void u16q_pop(U16Queue *q) {
-  u16 res = q->buf[q->i++];
+  q->i++;
   if (q->i >= q->cap) {
     q->i = 0;
   }
   q->len--;
-  return res;
 }
 
 inline static void u16q_push(U16Queue *q, u16 n) {
