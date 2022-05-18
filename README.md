@@ -21,15 +21,16 @@ Usage:
 LinkConnection conn;
 
 // ...
-
-  conn = lc_init({
+  
+  LinkConnectionSettings settings = {
     .baud_rate = BAUD_RATE_1,
     .timeout = 3,
     .remote_timeout = 5,
     .buffer_size = 30,
     .interval = 50,
     .send_timer_id = 3,
-  });
+  };
+  conn = lc_init(settings);
 ```
 
 2\) Add the required interrupt service routines:
@@ -65,8 +66,8 @@ void onTimer() {
 ```c
   lc_send(&conn, data)
   lc_is_connected(&conn)
-  lc_has_message(&conn)
-  lc_read_message(&conn)
+  lc_has_message(&conn, player_id)
+  lc_read_message(&conn, player_id)
 ```
 
 Restrictions on sent data: `0xFFFF` and `0x0000` are reserved values, so don't use them (they mean 'disconnected' and 'no data' respectively).

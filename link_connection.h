@@ -10,14 +10,15 @@ Usage:
 
 1) Include this header in your main.c file, then instantiate a connection.
 
-  LinkConnection conn = lc_init({
+  LinkConnectionSettings settings = {
     .baud_rate = BAUD_RATE_1,
     .timeout = 3,
     .remote_timeout = 5,
     .buffer_size = 30,
     .interval = 50,
     .send_timer_id = 3,
-  });
+  };
+  LinkConnection conn = lc_init(settings);
 
 2) Add the required interrupt service routines:
 
@@ -45,8 +46,8 @@ Usage:
 
   lc_send(&conn, data)
   lc_is_connected(&conn)
-  lc_has_message(&conn)
-  lc_read_message(&conn)
+  lc_has_message(&conn, player_id)
+  lc_read_message(&conn, player_id)
 
 `data` restrictions:
 0xFFFF and 0x0 are reserved values, so don't use them
