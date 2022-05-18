@@ -108,7 +108,7 @@ typedef struct LinkState {
   int timeouts[LINK_MAX_PLAYERS];
   bool irq_flag;
   u32 irq_timeout;
-  bool is_locked;
+  volatile bool is_locked;
 } LinkState;
 
 /**
@@ -122,9 +122,10 @@ typedef struct LinkConnection {
   u32 timeout;
   u32 remote_timeout;
   u32 buffer_len;
+  u16 *buffer_mem;   // This remains NULL if the struct was initialised with `lc_init_manual`.
   u32 interval;
   u8 send_timer_id;
-  bool is_enabled;
+  volatile bool is_enabled;
 } LinkConnection;
 
 /**
@@ -195,7 +196,7 @@ static inline void LINK_QUEUE_CLEAR(U16Queue *q) {
 // Link State (internal)
 // ---------------------
 
-static inline LinkState linkstate_init_manual(int buffer_len, u16 *buffer_mem) {
+static inline LinkState linkstate_init(int buffer_len, u16 *buffer_mem) {
   LinkState self = {};
   
   // Assume large enough for 4 player buffers + 1 outgoing buffer.
@@ -208,17 +209,6 @@ static inline LinkState linkstate_init_manual(int buffer_len, u16 *buffer_mem) {
   }
   self.outgoing_messages = u16q_init(buffer_len, buf);
   return self;
-}
-
-static inline LinkState linkstate_init(int buffer_len) {
-  u16 *buffer_mem = malloc(LINK_TOTAL_BUFFERS * buffer_len * sizeof(u16));
-  return linkstate_init_manual(buffer_len, buffer_mem);
-}
-
-static inline void linkstate_destroy(LinkState *self) {
-  // free message buffers
-  // no need to do this if `linkstate_init_manual` was called.
-  free(&self->incoming_messages[0].buf);   // Buffer 0 has 5 
 }
 
 static inline bool linkstate_is_connected(LinkState *self) {
@@ -337,7 +327,7 @@ static inline void lc_push(LinkConnection *self, U16Queue *q, u16 value) {
  */
 static inline LinkConnection lc_init_manual(LinkConnectionSettings settings, u16 *buffer_mem) {
   LinkConnection self = {
-    .state = linkstate_init_manual(settings.buffer_len, buffer_mem),
+    .state = linkstate_init(settings.buffer_len, buffer_mem),
     .baud_rate = settings.baud_rate,
     .timeout = settings.timeout,
     .remote_timeout = settings.remote_timeout,
@@ -353,22 +343,20 @@ static inline LinkConnection lc_init_manual(LinkConnectionSettings settings, u16
  * Initialise a link connection.
  */
 static inline LinkConnection lc_init(LinkConnectionSettings settings) {
-  LinkConnection self = {
-    .state = linkstate_init(settings.buffer_len),
-    .baud_rate = settings.baud_rate,
-    .timeout = settings.timeout,
-    .remote_timeout = settings.remote_timeout,
-    .buffer_len = settings.buffer_len,
-    .interval = settings.interval,
-    .send_timer_id = settings.send_timer_id,
-  };
-  lc_stop(&self);
-  return self;
+  u16 *buffer_mem = malloc(LINK_TOTAL_BUFFERS * settings.buffer_len * sizeof(u16));
+  LinkConnection result = lc_init_manual(settings, buffer_mem);
+  result.buffer_mem = buffer_mem;
+  return result;
 }
 
+/**
+ * Close the link and deallocate the buffers (unless they were provided with `lc_init_manual`).
+ */
 static inline void lc_destroy(LinkConnection *self) {
   lc_stop(self);
-  linkstate_destroy(&self->state);
+  if (self->buffer_mem) {
+    free(self->buffer_mem);
+  }
 }
 
 static inline bool lc_is_active(LinkConnection *self) {
