@@ -33,7 +33,10 @@ LinkConnection conn;
   conn = lc_init(settings);
   
   // Alternatively you can pass in memory for 5 buffers manually:
-  // conn = lc_init_manual(settings, malloc(LINK_TOTAL_BUFFERS * 30 * sizeof(u16)))
+  //
+  // EWRAM_DATA u16 buffers[LINK_TOTAL_BUFFERS * 30];
+  // ...
+  // conn = lc_init_manual(settings, buffers);
 ```
 
 2\) Add the required interrupt service routines:
